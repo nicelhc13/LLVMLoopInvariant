@@ -54,10 +54,34 @@ namespace {
      * check whether the instruction is invariant or not.
      * @I: target instruction.
      */
-    bool isLoopInvariant(Instruction &I) {
-      bool isInvariant = false;
+    bool isLoopInvariant(Instruction &I, Loop *L) {
+      /*
+       * Loop-invariant conditions.
+       *
+       * e.g. t=x+y
+       *
+       * 1) x and y are constants, or
+       * 2) all reaching definitions of x and y are
+       *    outside the loop, or
+       * 3) only one definition reaches x(or y), and
+       *    that definition is loop-invarinat.
+       * But maybe it is not necessary.
+       * We can exploit hasLoopInvariantOperands().
+       */
+      // check instruction types.
+      if (!I.isBinaryOp() && !I.isShift() && !I.isCast()
+          && !llvm::SelectInst::classof(&I)
+          && !llvm::GetElementPtrInst::classof(&I)) { return false; }
 
-      return isInvariant;
+      /* I tried to check the below instructions too,
+       * but I noticed that malloc or alloca etc is hard to detect in IR level.
+       * So, just keep the above conditions. It seems correct.
+      if (llvm::TerminatorInst::classof(I) || llvm::PHINode::classof(I)
+          || I.isLoadOrStor() || llvm::CallInst::classof(I) ||
+          llvm::InvokeInst::classof(I) || ..
+          */
+
+      return L->hasLoopInvariantOperands(&I);
     }
 
     /**
@@ -71,7 +95,8 @@ namespace {
       // on dominator tree.
       for (BasicBlock* BB : L->blocks()) { // not in an inner loop or outside L
         for (Instruction &instr : *BB) {
-          if (isLoopInvariant(instr) && safeToHoist(instr)) {
+          if (isLoopInvariant(instr, L) && safeToHoist(instr)) {
+            errs() << "LICM\n";
             // move I to pre-header basic-block;
           }
         }
@@ -80,7 +105,7 @@ namespace {
 
     bool runOnLoop(Loop *L, LPPassManager &LPW) {
       LICM(L);
-      return false;
+      return true;
     }
 	}; // end of struct HL26847
 }  // end of anonymous namespace
