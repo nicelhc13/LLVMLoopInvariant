@@ -113,25 +113,28 @@ namespace {
      * LoopSimplify pass does it.
      * @L: loop.
      */
-    void LICM(Loop *L, DominatorTree &domTree) {
+    void LICM(Loop *L, LoopInfo &LInfo, DominatorTree &domTree) {
       // Iterate each basic block BB dominated by loop header, in pre-order
       // on dominator tree.
       for (BasicBlock* BB : L->blocks()) { // not in an inner loop or outside L
-        for (Instruction &instr : *BB) {
-          if (isLoopInvariant(instr, L) && safeToHoist(instr, L, domTree)) {
-            errs() << "LICM\n";
-            // move I to pre-header basic-block;
+        if (LInfo.getLoopFor(BB) == L) { // only consider not-nested loops' BB
+          for (Instruction &instr : *BB) {
+            if (isLoopInvariant(instr, L) && safeToHoist(instr, L, domTree)) {
+              errs() << "LICM\n";
+              // move I to pre-header basic-block;
+            }
           }
         }
       }
     }
 
     bool runOnLoop(Loop *L, LPPassManager &LPW) {
-      DominatorTreeWrapperPass *domTreeWrapPass =
-                            getAnalysisIfAvailable<DominatorTreeWrapperPass>();
-      DominatorTree &domTree = domTreeWrapPass->getDomTree();
+      LoopInfo &LInfo = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
+      DominatorTreeWrapperPass &domTreeWrapPass =
+                            getAnalysis<DominatorTreeWrapperPass>();
+      DominatorTree &domTree = domTreeWrapPass.getDomTree();
 
-      LICM(L, domTree);
+      LICM(L, LInfo, domTree);
       return true;
     }
 	}; // end of struct HL26847
