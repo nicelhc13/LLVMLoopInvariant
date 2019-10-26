@@ -40,8 +40,36 @@ namespace {
       AU.addRequired<DominatorTreeWrapperPass>();
 		}
 
-    bool runOnLoop(Loop *, LPPassManager &LPW) {
+    /**
+     * check whether hoisting the instruction is safe or not.
+     * @I: target instruction
+     */
+    bool safeToHoist(Instruction &I) {
+      bool isSafeToHoist = false;
 
+      return isSafeToHoist;
+    }
+
+    /**
+     * check whether the instruction is invariant or not.
+     * @I: target instruction.
+     */
+    bool isLoopInvariant(Instruction &I) {
+      bool isInvariant = false;
+
+      return isInvariant;
+    }
+
+    /**
+     * Loop invariant code motion.
+     * @L: loop.
+     */
+    void LICM(Loop *L) {
+
+    }
+
+    bool runOnLoop(Loop *L, LPPassManager &LPW) {
+      LICM(L);
       return false;
     }
 	}; // end of struct HL26847
