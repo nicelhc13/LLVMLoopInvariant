@@ -114,6 +114,7 @@ namespace {
      * @L: loop.
      */
     void LICM(Loop *L, LoopInfo &LInfo, DominatorTree &domTree) {
+      BasicBlock *preHeaderBB = L->getLoopPreheader();
       // Iterate each basic block BB dominated by loop header, in pre-order
       // on dominator tree.
       for (BasicBlock* BB : L->blocks()) { // not in an inner loop or outside L
@@ -121,6 +122,7 @@ namespace {
           for (Instruction &instr : *BB) {
             if (isLoopInvariant(instr, L) && safeToHoist(instr, L, domTree)) {
               errs() << "LICM\n";
+              instr.moveBefore(preHeaderBB->getTerminator());
               // move I to pre-header basic-block;
             }
           }
