@@ -62,10 +62,20 @@ namespace {
 
     /**
      * Loop invariant code motion.
+     * Each loop object gives us a preheader block for the loop:
+     * LoopSimplify pass does it.
      * @L: loop.
      */
     void LICM(Loop *L) {
-
+      // Iterate each basic block BB dominated by loop header, in pre-order
+      // on dominator tree.
+      for (BasicBlock* BB : L->blocks()) { // not in an inner loop or outside L
+        for (Instruction &instr : *BB) {
+          if (isLoopInvariant(instr) && safeToHoist(instr)) {
+            // move I to pre-header basic-block;
+          }
+        }
+      }
     }
 
     bool runOnLoop(Loop *L, LPPassManager &LPW) {

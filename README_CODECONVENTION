@@ -8,10 +8,14 @@ Please follow the below code conventions.
    (in vim, :set colorcolumn=80 would be useful.)
 3) comment convention
   3-1) multi-line comments
-       /**
-        *
-        ..
-        */
+      if comments are more than 5 lines.
+      /*
+       * ..
+       */
+
+      otherwise
+      // adkfaskf
+      // dsjfiewjfiej
 
   3-2) one line comment
       // ...
