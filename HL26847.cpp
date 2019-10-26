@@ -46,6 +46,17 @@ namespace {
      * @I: target instruction
      */
     bool safeToHoist(Instruction &I, Loop *L, DominatorTree &domTree) {
+      /*
+       * Hoisting conditions.
+       *
+       * e.g. d:t=x+y
+       *
+       * 1) d's block dominates all loop exits at which t is live-out, and
+       * 2) there is only one definition of t in the loop, and
+       * 3) t is not live-out of the pre-header.
+       *
+       * dominate() handles all the above situations.
+       */
       bool isSafeToHoist = true;;
       SmallVector<BasicBlock *, 10> exitBlocks;
 
