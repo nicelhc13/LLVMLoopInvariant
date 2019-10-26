@@ -8,6 +8,7 @@
 #include "llvm/IR/Dominators.h"
 #include "llvm/Analysis/LoopPass.h"
 #include "llvm/Transforms/Utils.h"
+#include "llvm/Analysis/ValueTracking.h"
 
 #include <iostream>
 
@@ -44,8 +45,19 @@ namespace {
      * check whether hoisting the instruction is safe or not.
      * @I: target instruction
      */
-    bool safeToHoist(Instruction &I) {
-      bool isSafeToHoist = false;
+    bool safeToHoist(Instruction &I, Loop *L, DominatorTree &domTree) {
+      bool isSafeToHoist = true;;
+      SmallVector<BasicBlock *, 10> exitBlocks;
+
+      if (llvm::isSafeToSpeculativelyExecute(&I)) { return true; }
+
+      L->getExitBlocks(exitBlocks);
+      for (BasicBlock* exitBlock : exitBlocks) {
+        if (!domTree.dominates(&I, exitBlock)) {
+          isSafeToHoist = false;
+          break;
+        }
+      }
 
       return isSafeToHoist;
     }
@@ -90,12 +102,12 @@ namespace {
      * LoopSimplify pass does it.
      * @L: loop.
      */
-    void LICM(Loop *L) {
+    void LICM(Loop *L, DominatorTree &domTree) {
       // Iterate each basic block BB dominated by loop header, in pre-order
       // on dominator tree.
       for (BasicBlock* BB : L->blocks()) { // not in an inner loop or outside L
         for (Instruction &instr : *BB) {
-          if (isLoopInvariant(instr, L) && safeToHoist(instr)) {
+          if (isLoopInvariant(instr, L) && safeToHoist(instr, L, domTree)) {
             errs() << "LICM\n";
             // move I to pre-header basic-block;
           }
@@ -104,7 +116,11 @@ namespace {
     }
 
     bool runOnLoop(Loop *L, LPPassManager &LPW) {
-      LICM(L);
+      DominatorTreeWrapperPass *domTreeWrapPass =
+                            getAnalysisIfAvailable<DominatorTreeWrapperPass>();
+      DominatorTree &domTree = domTreeWrapPass->getDomTree();
+
+      LICM(L, domTree);
       return true;
     }
 	}; // end of struct HL26847
