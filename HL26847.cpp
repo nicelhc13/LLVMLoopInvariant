@@ -41,6 +41,11 @@ namespace {
       AU.addRequired<DominatorTreeWrapperPass>();
 		}
 
+    template <typename T, unsigned N>
+    void calcPreOrder(SmallVector<T, N> &preOrderBBs) {
+
+    }
+
     /**
      * check whether hoisting the instruction is safe or not.
      * @I: target instruction
@@ -118,24 +123,29 @@ namespace {
       // Iterate each basic block BB dominated by loop header, in pre-order
       // on dominator tree.
       for (BasicBlock* BB : L->blocks()) { // not in an inner loop or outside L
+        errs() << "BasicBlock:" << BB->getName();
         if (LInfo.getLoopFor(BB) == L) { // only consider not-nested loops' BB
           for (Instruction &instr : *BB) {
+            errs() << instr.getOpcodeName() << "\n";
             if (isLoopInvariant(instr, L) && safeToHoist(instr, L, domTree)) {
-              errs() << "LICM\n";
               instr.moveBefore(preHeaderBB->getTerminator());
               // move I to pre-header basic-block;
             }
           }
         }
+        errs() << "Next.\n\n";
       }
     }
 
     bool runOnLoop(Loop *L, LPPassManager &LPW) {
+      // Note that LoopPass iterates all loops including nested loops.
       LoopInfo &LInfo = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
       DominatorTreeWrapperPass &domTreeWrapPass =
                             getAnalysis<DominatorTreeWrapperPass>();
       DominatorTree &domTree = domTreeWrapPass.getDomTree();
+      SmallVector<BasicBlock *, 10> preOrderedBBs;
 
+      calcPreOrder(preOrderedBBs);
       LICM(L, LInfo, domTree);
       return true;
     }
