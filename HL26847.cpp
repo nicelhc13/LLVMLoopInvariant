@@ -14,6 +14,7 @@
 
 #define STR(s) std::to_string(s)
 //#define PRINT_LOG
+#define PRINT_LICM
 
 using namespace llvm;
 
@@ -86,6 +87,7 @@ namespace {
         }
       }
 
+      errs() << "safeToHoist:" << isSafeToHoist << "\n";
       return isSafeToHoist;
     }
 
@@ -94,6 +96,9 @@ namespace {
      * @I: target instruction.
      */
     bool isLoopInvariant(Instruction &I, Loop *L) {
+#ifdef PRINT_LOG
+      errs() << I << "\n";
+#endif
       /*
        * Loop-invariant conditions.
        *
@@ -109,8 +114,8 @@ namespace {
        */
       // check instruction types.
       if (!I.isBinaryOp() && !I.isShift() && !I.isCast()
-          && !llvm::SelectInst::classof(&I)
-          && !llvm::GetElementPtrInst::classof(&I)) { return false; }
+          && !SelectInst::classof(&I)
+          && !GetElementPtrInst::classof(&I)) { return false; }
 
       /* I tried to check the below instructions too,
        * but I noticed that malloc or alloca etc is hard to detect in IR level.
@@ -120,7 +125,35 @@ namespace {
           llvm::InvokeInst::classof(I) || ..
           */
 
-      return L->hasLoopInvariantOperands(&I);
+      bool checkLoopInvariant = true;
+
+      // 1) Check whether all operands are constant.
+      //    If is not, checkLoopInvariant is set to 'false'.
+      size_t numOperands = I.getNumOperands();
+#ifdef PRINT_LOG
+      errs() << "# of operands:" << numOperands << "\n";
+#endif
+      for (uint32_t opi = 0; opi < numOperands; opi++) {
+        if (!Constant::classof(I.getOperand(opi))) {
+          checkLoopInvariant = false;
+#ifdef PRINT_LOG
+          errs() << "Operand(" << opi << ") is not constant\n";
+#endif
+        }
+#ifdef PRINT_LOG
+        else {
+          errs() << "Operand(" << opi << ") is constant\n";
+        }
+#endif
+      }
+
+      // 2) Check whether all operands are compuated outside the loop.
+      //    If it is, return value is 'false'.
+      errs() << "Loop invariant: " << checkLoopInvariant << "\n";
+      checkLoopInvariant |= L->hasLoopInvariantOperands(&I);
+      errs() << "HasLoopInvariantOperands: " << 
+                 L->hasLoopInvariantOperands(&I) << "\n";
+      return checkLoopInvariant;
     }
 
     /**
@@ -129,7 +162,10 @@ namespace {
      * LoopSimplify pass does it.
      * @L: loop.
      */
-    void LICM(Loop *L, LoopInfo &LInfo, DominatorTree &domTree) {
+    template <typename T, unsigned N>
+    bool LICM(Loop *L, LoopInfo &LInfo,
+              DominatorTree &domTree, SmallVector<T, N> &preOrderBBs) {
+      bool isDomTreeChanged = false;
       BasicBlock *preHeaderBB = L->getLoopPreheader();
       // Iterate each basic block BB dominated by loop header, in pre-order
       // on dominator tree.
@@ -137,7 +173,8 @@ namespace {
 #ifdef PRINT_LOG
       errs() << "========START======\n";;
 #endif
-      for (BasicBlock* BB : L->blocks()) { // not in an inner loop or outside L
+      //for (BasicBlock* BB : L->blocks()) { //not in an inner loop or outside L
+      for (BasicBlock* BB : preOrderBBs) {
         if (LInfo.getLoopFor(BB) == L) { // only consider not-nested loops' BB
 #ifdef PRINT_LOG
           errs() << "BasicBlock\n";
@@ -147,8 +184,13 @@ namespace {
             errs() << instr.getOpcodeName() << "\n";
 #endif
             if (isLoopInvariant(instr, L) && safeToHoist(instr, L, domTree)) {
-              instr.moveBefore(preHeaderBB->getTerminator());
               // move I to pre-header basic-block;
+              instr.moveBefore(preHeaderBB->getTerminator());
+              isDomTreeChanged = true;
+#ifdef PRINT_LOG
+              errs() << "Hoisted..\n";
+              errs() << instr << "\n";
+#endif
             }
           }
 #ifdef PRINT_LOG
@@ -159,10 +201,12 @@ namespace {
 #ifdef PRINT_LOG
       errs() << "===================\n";;
 #endif
+      return isDomTreeChanged;
     }
 
     bool runOnLoop(Loop *L, LPPassManager &LPW) {
       // Note that LoopPass iterates all loops including nested loops.
+      bool isDomTreeChanged = true;
       LoopInfo &LInfo = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
       DominatorTreeWrapperPass &domTreeWrapPass =
                             getAnalysis<DominatorTreeWrapperPass>();
@@ -170,7 +214,7 @@ namespace {
       SmallVector<BasicBlock *, 10> preOrderedBBs;
 
       calcPreOrder(preOrderedBBs, L, domTree, domTree.getRootNode());
-      LICM(L, LInfo, domTree);
+      isDomTreeChanged = LICM(L, LInfo, domTree, preOrderedBBs);
 #ifdef PRINT_LOG
       errs() << "========START======\n";;
       for (BasicBlock* BB : preOrderedBBs) {
@@ -184,7 +228,7 @@ namespace {
       }
       errs() << "===================\n";;
 #endif
-      return true;
+      return isDomTreeChanged;
     }
 	}; // end of struct HL26847
 }  // end of anonymous namespace
