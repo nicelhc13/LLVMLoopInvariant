@@ -13,6 +13,7 @@
 #include <iostream>
 
 #define STR(s) std::to_string(s)
+//#define PRINT_LOG
 
 using namespace llvm;
 
@@ -42,8 +43,18 @@ namespace {
 		}
 
     template <typename T, unsigned N>
-    void calcPreOrder(SmallVector<T, N> &preOrderBBs) {
+    void calcPreOrder(SmallVector<T, N> &preOrderBBs,
+                      Loop* L, DominatorTree &domTree,
+                      DomTreeNode *curNode) {
+      BasicBlock *loopHeader = L->getHeader();
+      BasicBlock *curBB = curNode->getBlock();
+      if (domTree.dominates(loopHeader, curBB)) {
+        preOrderBBs.emplace_back(curBB);
+      }
 
+      for (DomTreeNode *children : curNode->getChildren()) {
+        calcPreOrder(preOrderBBs, L, domTree, children);
+      }
     }
 
     /**
@@ -122,19 +133,32 @@ namespace {
       BasicBlock *preHeaderBB = L->getLoopPreheader();
       // Iterate each basic block BB dominated by loop header, in pre-order
       // on dominator tree.
+
+#ifdef PRINT_LOG
+      errs() << "========START======\n";;
+#endif
       for (BasicBlock* BB : L->blocks()) { // not in an inner loop or outside L
-        errs() << "BasicBlock:" << BB->getName();
         if (LInfo.getLoopFor(BB) == L) { // only consider not-nested loops' BB
+#ifdef PRINT_LOG
+          errs() << "BasicBlock\n";
+#endif
           for (Instruction &instr : *BB) {
+#ifdef PRINT_LOG
             errs() << instr.getOpcodeName() << "\n";
+#endif
             if (isLoopInvariant(instr, L) && safeToHoist(instr, L, domTree)) {
               instr.moveBefore(preHeaderBB->getTerminator());
               // move I to pre-header basic-block;
             }
           }
+#ifdef PRINT_LOG
+          errs() << "\n";
+#endif
         }
-        errs() << "Next.\n\n";
       }
+#ifdef PRINT_LOG
+      errs() << "===================\n";;
+#endif
     }
 
     bool runOnLoop(Loop *L, LPPassManager &LPW) {
@@ -145,8 +169,21 @@ namespace {
       DominatorTree &domTree = domTreeWrapPass.getDomTree();
       SmallVector<BasicBlock *, 10> preOrderedBBs;
 
-      calcPreOrder(preOrderedBBs);
+      calcPreOrder(preOrderedBBs, L, domTree, domTree.getRootNode());
       LICM(L, LInfo, domTree);
+#ifdef PRINT_LOG
+      errs() << "========START======\n";;
+      for (BasicBlock* BB : preOrderedBBs) {
+        if (LInfo.getLoopFor(BB) == L) {
+          errs() << "BasicBlock:\n";
+          for (Instruction &instr : *BB) {
+            errs() << instr.getOpcodeName() << "\n";
+          }
+          errs() << "\n";
+        }
+      }
+      errs() << "===================\n";;
+#endif
       return true;
     }
 	}; // end of struct HL26847
