@@ -87,7 +87,6 @@ namespace {
         }
       }
 
-      errs() << "safeToHoist:" << isSafeToHoist << "\n";
       return isSafeToHoist;
     }
 
@@ -149,10 +148,7 @@ namespace {
 
       // 2) Check whether all operands are compuated outside the loop.
       //    If it is, return value is 'false'.
-      errs() << "Loop invariant: " << checkLoopInvariant << "\n";
       checkLoopInvariant |= L->hasLoopInvariantOperands(&I);
-      errs() << "HasLoopInvariantOperands: " << 
-                 L->hasLoopInvariantOperands(&I) << "\n";
       return checkLoopInvariant;
     }
 
@@ -173,6 +169,9 @@ namespace {
 #ifdef PRINT_LOG
       errs() << "========START======\n";;
 #endif
+      // Hoisting should be done after iterating BBs.
+      // Otherwise, it invokes segment fault.
+      SmallVector<std::pair<BasicBlock *, Instruction *>,10> hoistedPairs;
       //for (BasicBlock* BB : L->blocks()) { //not in an inner loop or outside L
       for (BasicBlock* BB : preOrderBBs) {
         if (LInfo.getLoopFor(BB) == L) { // only consider not-nested loops' BB
@@ -185,11 +184,11 @@ namespace {
 #endif
             if (isLoopInvariant(instr, L) && safeToHoist(instr, L, domTree)) {
               // move I to pre-header basic-block;
-              instr.moveBefore(preHeaderBB->getTerminator());
+              hoistedPairs.emplace_back(preHeaderBB, &instr);
               isDomTreeChanged = true;
-#ifdef PRINT_LOG
-              errs() << "Hoisted..\n";
-              errs() << instr << "\n";
+#ifdef PRINT_LICM
+              outs() << "Hoisted..\n";
+              outs() << instr << "\n";
 #endif
             }
           }
@@ -197,6 +196,13 @@ namespace {
           errs() << "\n";
 #endif
         }
+      }
+
+      // Hoist statements.
+      for (std::pair<BasicBlock *, Instruction *> pairedElem : hoistedPairs)
+      {
+        errs() << *pairedElem.second << "\n";
+        pairedElem.second->moveBefore(pairedElem.first->getTerminator());
       }
 #ifdef PRINT_LOG
       errs() << "===================\n";;
@@ -236,5 +242,5 @@ namespace {
 char HL26847::ID = 0;
 
 static RegisterPass<HL26847> X("HL26847", "HL26847 Pass",
-		false /* Only looks at CFG */,
-		false /* Analysis Pass */);
+                false /* Only looks at CFG */,
+                false /* Analysis Pass */);
