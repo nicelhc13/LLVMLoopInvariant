@@ -43,21 +43,6 @@ namespace {
       AU.addRequired<DominatorTreeWrapperPass>();
 		}
 
-    template <typename T, unsigned N>
-    void calcPreOrder(SmallVector<T, N> &preOrderBBs,
-                      Loop* L, DominatorTree &domTree,
-                      DomTreeNode *curNode) {
-      BasicBlock *loopHeader = L->getHeader();
-      BasicBlock *curBB = curNode->getBlock();
-      if (domTree.dominates(loopHeader, curBB)) {
-        preOrderBBs.emplace_back(curBB);
-      }
-
-      for (DomTreeNode *children : curNode->getChildren()) {
-        calcPreOrder(preOrderBBs, L, domTree, children);
-      }
-    }
-
     /**
      * check whether hoisting the instruction is safe or not.
      * @I: target instruction
@@ -116,14 +101,6 @@ namespace {
           && !SelectInst::classof(&I)
           && !GetElementPtrInst::classof(&I)) { return false; }
 
-      /* I tried to check the below instructions too,
-       * but I noticed that malloc or alloca etc is hard to detect in IR level.
-       * So, just keep the above conditions. It seems correct.
-      if (llvm::TerminatorInst::classof(I) || llvm::PHINode::classof(I)
-          || I.isLoadOrStor() || llvm::CallInst::classof(I) ||
-          llvm::InvokeInst::classof(I) || ..
-          */
-
       bool checkLoopInvariant = true;
 
       // 1) Check whether all operands are constant.
@@ -158,55 +135,35 @@ namespace {
      * LoopSimplify pass does it.
      * @L: loop.
      */
-    template <typename T, unsigned N>
     bool LICM(Loop *L, LoopInfo &LInfo,
-              DominatorTree &domTree, SmallVector<T, N> &preOrderBBs) {
+              DominatorTree &domTree, DomTreeNode *curNode) {
       bool isDomTreeChanged = false;
       BasicBlock *preHeaderBB = L->getLoopPreheader();
+      BasicBlock *loopHeader = L->getHeader();
+      BasicBlock *curBB = curNode->getBlock();
+
       // Iterate each basic block BB dominated by loop header, in pre-order
       // on dominator tree.
 
-#ifdef PRINT_LOG
-      errs() << "========START======\n";;
-#endif
-      // Hoisting should be done after iterating BBs.
-      // Otherwise, it invokes segment fault.
-      SmallVector<std::pair<BasicBlock *, Instruction *>,10> hoistedPairs;
-      //for (BasicBlock* BB : L->blocks()) { //not in an inner loop or outside L
-      for (BasicBlock* BB : preOrderBBs) {
-        if (LInfo.getLoopFor(BB) == L) { // only consider not-nested loops' BB
-#ifdef PRINT_LOG
-          errs() << "BasicBlock\n";
-#endif
-          for (Instruction &instr : *BB) {
-#ifdef PRINT_LOG
-            errs() << instr.getOpcodeName() << "\n";
-#endif
+      if (domTree.dominates(loopHeader, curBB)) {
+        if (LInfo.getLoopFor(curBB) == L) { // only consider not-nested loops' BB
+          auto instrIter = curBB->getInstList().begin();
+          for (; instrIter != curBB->getInstList().end();) {
+            Instruction &instr = *(instrIter++);
             if (isLoopInvariant(instr, L) && safeToHoist(instr, L, domTree)) {
               // move I to pre-header basic-block;
-              hoistedPairs.emplace_back(preHeaderBB, &instr);
+              instr.moveBefore(preHeaderBB->getTerminator());
               isDomTreeChanged = true;
-#ifdef PRINT_LICM
-              outs() << "Hoisted..\n";
-              outs() << instr << "\n";
-#endif
+              errs() << instr << "\n";
             }
           }
-#ifdef PRINT_LOG
-          errs() << "\n";
-#endif
         }
       }
 
-      // Hoist statements.
-      for (std::pair<BasicBlock *, Instruction *> pairedElem : hoistedPairs)
-      {
-        errs() << *pairedElem.second << "\n";
-        pairedElem.second->moveBefore(pairedElem.first->getTerminator());
+      for (DomTreeNode *children : curNode->getChildren()) {
+        isDomTreeChanged = isDomTreeChanged || LICM(L, LInfo, domTree, children);
       }
-#ifdef PRINT_LOG
-      errs() << "===================\n";;
-#endif
+
       return isDomTreeChanged;
     }
 
@@ -217,10 +174,7 @@ namespace {
       DominatorTreeWrapperPass &domTreeWrapPass =
                             getAnalysis<DominatorTreeWrapperPass>();
       DominatorTree &domTree = domTreeWrapPass.getDomTree();
-      SmallVector<BasicBlock *, 10> preOrderedBBs;
-
-      calcPreOrder(preOrderedBBs, L, domTree, domTree.getRootNode());
-      isDomTreeChanged = LICM(L, LInfo, domTree, preOrderedBBs);
+      isDomTreeChanged = LICM(L, LInfo, domTree, domTree.getRootNode());
 #ifdef PRINT_LOG
       errs() << "========START======\n";;
       for (BasicBlock* BB : preOrderedBBs) {
