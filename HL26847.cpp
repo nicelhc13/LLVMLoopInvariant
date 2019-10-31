@@ -125,7 +125,7 @@ namespace {
 
       // 2) Check whether all operands are compuated outside the loop.
       //    If it is, return value is 'false'.
-      checkLoopInvariant |= L->hasLoopInvariantOperands(&I);
+      checkLoopInvariant = checkLoopInvariant || L->hasLoopInvariantOperands(&I);
       return checkLoopInvariant;
     }
 
